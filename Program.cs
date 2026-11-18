@@ -31,14 +31,31 @@ builder.Services.AddCors(options =>
     options.AddPolicy("FrontendPolicy", policy =>
     {
         policy
-            .WithOrigins("http://localhost:5175", "https://localhost:5175")
+            .SetIsOriginAllowed(origin =>
+            {
+                if (Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+                {
+                    return uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+                           uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase);
+                }
+                return false;
+            })
             .AllowAnyHeader()
             .AllowAnyMethod();
 
         var frontendOrigin = Environment.GetEnvironmentVariable("FRONTEND_ORIGIN");
         if (!string.IsNullOrWhiteSpace(frontendOrigin))
         {
-            policy.WithOrigins(frontendOrigin.Trim());
+            var origins = frontendOrigin
+                .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(o => o.Trim().TrimEnd('/'))
+                .Where(o => !string.IsNullOrEmpty(o))
+                .ToArray();
+
+            if (origins.Length > 0)
+            {
+                policy.WithOrigins(origins);
+            }
         }
     });
 });
@@ -52,9 +69,12 @@ var app = builder.Build();
 
 app.UseCors("FrontendPolicy");
 
-// HTTPS redirection only applies when HTTPS is available (local dev).
-// On Railway, traffic is terminated at the load balancer.
-app.UseHttpsRedirection();
+// HTTPS redirection only applies in local Development where certificates exist.
+// On Railway and production container environments, TLS is terminated at the load balancer.
+if (app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseAuthorization();
 
