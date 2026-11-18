@@ -10,13 +10,12 @@ WORKDIR /src
 COPY CompetitionApi.csproj .
 RUN dotnet restore CompetitionApi.csproj
 
-# Copy the rest of the source code and build.
+# Copy the rest of the source code.
 COPY . .
-RUN dotnet build CompetitionApi.csproj -c Release --no-restore -o /app/build
 
 # ---- Publish stage ----
 FROM build AS publish
-RUN dotnet publish CompetitionApi.csproj -c Release --no-build -o /app/publish
+RUN dotnet publish CompetitionApi.csproj -c Release -o /app/publish
 
 # ---- Runtime stage ----
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
