@@ -1,5 +1,6 @@
 using CompetitionApi.Data;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,21 +12,31 @@ if (!string.IsNullOrEmpty(port))
     builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 }
 
-// Add services to the container.
-
 builder.Services.AddControllers();
 
-// Register Entity Framework Core with SQL Server.
-// Connection string is read from configuration, which supports the
-// ConnectionStrings__DefaultConnection environment variable in production.
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-{
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
-});
+// --- DATABASE CONFIGURATION (Local SQL Server vs Railway PostgreSQL) ---
+var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 
-// CORS policy. Local development origins are always allowed. The deployed
-// Vercel frontend origin is read from the FRONTEND_ORIGIN environment
-// variable so it can be set per deployment without code changes.
+if (string.IsNullOrEmpty(databaseUrl))
+{
+    // Local Development: Use SQL Server from appsettings.json
+    builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    {
+        options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+    });
+}
+else
+{
+    // Railway Production: Use PostgreSQL from Railway DATABASE_URL
+    var connectionString = ConvertPostgreSqlUrlToConnectionString(databaseUrl);
+    builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    {
+        options.UseNpgsql(connectionString);
+    });
+}
+// ------------------------------------------------------------------------
+
+// CORS policy configuration
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("FrontendPolicy", policy =>
@@ -60,17 +71,36 @@ builder.Services.AddCors(options =>
     });
 });
 
-// OpenAPI document support (built-in .NET 10 infrastructure).
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// --- AUTOMATIC DATABASE INITIALIZATION / MIGRATION ON STARTUP ---
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        // Automatically applies pending migrations if any exist, or creates schema
+        var pendingMigrations = dbContext.Database.GetPendingMigrations();
+        if (pendingMigrations.Any())
+        {
+            dbContext.Database.Migrate();
+        }
+        else
+        {
+            dbContext.Database.EnsureCreated();
+        }
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "Database startup initialization/migration failed or skipped.");
+    }
+}
+// ---------------------------------------------------------------
 
 app.UseCors("FrontendPolicy");
 
-// HTTPS redirection only applies in local Development where certificates exist.
-// On Railway and production container environments, TLS is terminated at the load balancer.
 if (app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
@@ -80,10 +110,46 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-// OpenAPI document available in Development only.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
 app.Run();
+
+// Helper to convert PostgreSQL URIs (e.g. postgres://user:pass@host:port/db) to Npgsql connection string
+static string ConvertPostgreSqlUrlToConnectionString(string url)
+{
+    if (!url.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
+        !url.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+    {
+        return url;
+    }
+
+    try
+    {
+        var uri = new Uri(url);
+        var userInfo = uri.UserInfo.Split(':');
+        var username = userInfo.Length > 0 ? Uri.UnescapeDataString(userInfo[0]) : "";
+        var password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
+        var host = uri.Host;
+        var port = uri.Port > 0 ? uri.Port : 5432;
+        var database = uri.AbsolutePath.TrimStart('/');
+
+        var builder = new NpgsqlConnectionStringBuilder
+        {
+            Host = host,
+            Port = port,
+            Database = database,
+            Username = username,
+            Password = password,
+            SslMode = SslMode.Prefer
+        };
+
+        return builder.ConnectionString;
+    }
+    catch
+    {
+        return url;
+    }
+}
