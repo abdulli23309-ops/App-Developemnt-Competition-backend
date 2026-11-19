@@ -34,14 +34,24 @@ public static class ServiceCollectionExtensions
 
             var rawConn = hasPostgresUrl ? databaseUrl! : defaultConn!;
             var npgsqlConnectionString = NormalizePostgresConnectionString(rawConn);
-            services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(npgsqlConnectionString));
+            services.AddDbContext<PostgreSqlApplicationDbContext>(options =>
+                options.UseNpgsql(
+                    npgsqlConnectionString,
+                    postgres => postgres.MigrationsAssembly(typeof(PostgreSqlApplicationDbContext).Assembly.FullName)));
+            services.AddScoped<ApplicationDbContext>(serviceProvider =>
+                serviceProvider.GetRequiredService<PostgreSqlApplicationDbContext>());
             Console.WriteLine("Database provider selected: PostgreSQL (Railway Production).");
         }
         else if (isPostgres)
         {
             var rawConn = hasPostgresUrl ? databaseUrl! : defaultConn!;
             var npgsqlConnectionString = NormalizePostgresConnectionString(rawConn);
-            services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(npgsqlConnectionString));
+            services.AddDbContext<PostgreSqlApplicationDbContext>(options =>
+                options.UseNpgsql(
+                    npgsqlConnectionString,
+                    postgres => postgres.MigrationsAssembly(typeof(PostgreSqlApplicationDbContext).Assembly.FullName)));
+            services.AddScoped<ApplicationDbContext>(serviceProvider =>
+                serviceProvider.GetRequiredService<PostgreSqlApplicationDbContext>());
             Console.WriteLine("Database provider selected: PostgreSQL (Development).");
         }
         else

@@ -72,13 +72,14 @@ using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-    // The checked-in migration set was scaffolded for SQL Server. EF migrations contain
-    // provider-specific types and annotations, so do not apply it to Railway PostgreSQL.
-    if (dbContext.Database.ProviderName == "Npgsql.EntityFrameworkCore.PostgreSQL")
+    // Keep PostgreSQL migrations isolated from the SQL Server migration set. The
+    // PostgreSQL DI registration resolves this base type to the PostgreSQL context.
+    if (dbContext.Database.ProviderName == "Npgsql.EntityFrameworkCore.PostgreSQL" &&
+        dbContext is not PostgreSqlApplicationDbContext)
     {
         throw new InvalidOperationException(
-            "PostgreSQL was selected, but this deployment has no PostgreSQL-specific EF Core migrations. " +
-            "Refusing to migrate or seed the database until a PostgreSQL migration set is added.");
+            "PostgreSQL is selected, but the PostgreSQL-specific DbContext was not registered. " +
+            "Refusing to use SQL Server migrations with PostgreSQL.");
     }
 
     dbContext.Database.Migrate();
