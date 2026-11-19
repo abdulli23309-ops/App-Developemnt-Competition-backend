@@ -1,5 +1,6 @@
 using System.Text.Json;
 using CompetitionApi.Data;
+using CompetitionApi.Data.Seed;
 using CompetitionApi.Extensions;
 using CompetitionApi.Middleware;
 using CompetitionApi.Models.Entities;
@@ -67,37 +68,24 @@ var app = builder.Build();
 
 app.UseMiddleware<GlobalExceptionMiddleware>();
 
-// Apply migrations and seed on startup exclusively using PostgreSqlApplicationDbContext.
+// Apply migrations and seed on startup. Fail fast on error.
 using (var scope = app.Services.CreateScope())
 {
-    var dbContext = scope.ServiceProvider.GetRequiredService<PostgreSqlApplicationDbContext>();
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
-    const int maxRetries = 5;
-    var succeeded = false;
-
-    for (var attempt = 1; attempt <= maxRetries; attempt++)
+    try
     {
-        try
-        {
-            logger.LogInformation("Connecting to PostgreSQL and verifying migrations (attempt {Attempt}/{MaxRetries})...", attempt, maxRetries);
-            dbContext.Database.Migrate();
-            CompetitionApi.Data.Seed.DbInitializer.Initialize(dbContext);
-            succeeded = true;
-            logger.LogInformation("PostgreSQL migration and database seeding completed successfully.");
-            break;
-        }
-        catch (Exception ex) when (attempt < maxRetries)
-        {
-            logger.LogWarning(ex, "Database connection/migration attempt {Attempt} failed: {Message}. Retrying in 2 seconds...", attempt, ex.Message);
-            Thread.Sleep(2000);
-        }
+        logger.LogInformation("Applying PostgreSQL migrations (Provider: {Provider})...", dbContext.Database.ProviderName);
+        dbContext.Database.Migrate();
+        logger.LogInformation("PostgreSQL migrations applied successfully. Initializing seed data...");
+        DbInitializer.Initialize(dbContext);
+        logger.LogInformation("Database migration and seeding completed successfully.");
     }
-
-    if (!succeeded)
+    catch (Exception ex)
     {
-        logger.LogError("CRITICAL: Failed to connect to or migrate PostgreSQL database after {MaxRetries} attempts.", maxRetries);
-        throw new InvalidOperationException($"CRITICAL: Database initialization failed after {maxRetries} attempts.");
+        logger.LogError(ex, "FATAL: Database initialization failed. Exception {Type}: {Message}", ex.GetType().Name, ex.Message);
+        throw;
     }
 }
 

@@ -117,12 +117,12 @@ public class ComplaintsController : BaseApiController
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            var term = search.Trim().ToLower();
+            var pattern = $"%{search.Trim()}%";
             query = query.Where(c =>
-                c.TrackingCode.ToLower().Contains(term) ||
-                c.Title.ToLower().Contains(term) ||
-                c.Description.ToLower().Contains(term) ||
-                (c.Location != null && c.Location.ToLower().Contains(term)));
+                EF.Functions.ILike(c.TrackingCode, pattern) ||
+                EF.Functions.ILike(c.Title, pattern) ||
+                EF.Functions.ILike(c.Description, pattern) ||
+                (c.Location != null && EF.Functions.ILike(c.Location, pattern)));
         }
 
         var list = await query
@@ -376,7 +376,6 @@ public class ComplaintsController : BaseApiController
             Status = ComplaintStatus.Pending,
             IsAnonymous = req.IsAnonymous,
             StudentId = student.Id,
-            RowVersion = new byte[8],
             CreatedAtUtc = DateTime.UtcNow,
             UpdatedAtUtc = DateTime.UtcNow
         };
@@ -637,5 +636,63 @@ public class ComplaintsController : BaseApiController
 
         var bytes = Encoding.UTF8.GetBytes(sb.ToString());
         return File(bytes, "text/csv", $"campusconnect_export_{DateTime.UtcNow:yyyyMMdd}.csv");
+    }
+
+    [HttpPost("{id}/attachments")]
+    public async Task<IActionResult> UploadAttachment(int id, IFormFile file)
+    {
+        var (userId, role, deptId) = GetUserContext();
+        var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id);
+        if (complaint == null) return NotFoundResult("Complaint not found.");
+
+        if (role == Roles.Student && complaint.StudentId != userId)
+            return Forbid();
+        if (role == Roles.DeptAdmin && deptId.HasValue && complaint.DepartmentId != deptId.Value)
+            return Forbid();
+
+        if (file == null || file.Length == 0)
+            return BadRequestResult("No file provided.");
+
+        using var ms = new MemoryStream();
+        await file.CopyToAsync(ms);
+
+        var attachment = new ComplaintAttachment
+        {
+            ComplaintId = complaint.Id,
+            FileName = Path.GetFileName(file.FileName),
+            ContentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType,
+            FileSize = file.Length,
+            FileData = ms.ToArray(),
+            UploadedAtUtc = DateTime.UtcNow
+        };
+
+        _context.ComplaintAttachments.Add(attachment);
+        await _context.SaveChangesAsync();
+
+        return OkResult(new
+        {
+            id = attachment.Id,
+            fileName = attachment.FileName,
+            fileSizeBytes = attachment.FileSize,
+            uploadedAt = attachment.UploadedAtUtc
+        }, "Attachment uploaded successfully.");
+    }
+
+    [HttpGet("{id}/attachments/{attachmentId}")]
+    public async Task<IActionResult> DownloadAttachment(int id, int attachmentId)
+    {
+        var (userId, role, deptId) = GetUserContext();
+        var attachment = await _context.ComplaintAttachments
+            .Include(a => a.Complaint)
+            .FirstOrDefaultAsync(a => a.Id == attachmentId && a.ComplaintId == id);
+
+        if (attachment == null) return NotFoundResult("Attachment not found.");
+
+        if (role == Roles.Student && attachment.Complaint.StudentId != userId)
+            return Forbid();
+        if (role == Roles.DeptAdmin && deptId.HasValue && attachment.Complaint.DepartmentId != deptId.Value)
+            return Forbid();
+
+        return File(attachment.FileData, attachment.ContentType, attachment.FileName);
     }
 }

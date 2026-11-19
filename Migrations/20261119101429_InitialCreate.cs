@@ -4,10 +4,10 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace CompetitionApi.Migrations.PostgreSql
+namespace CompetitionApi.Migrations
 {
     /// <inheritdoc />
-    public partial class InitialPostgreSqlCreate : Migration
+    public partial class InitialCreate : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -120,7 +120,6 @@ namespace CompetitionApi.Migrations.PostgreSql
                     RatingFeedback = table.Column<string>(type: "text", nullable: true),
                     ReopenCount = table.Column<int>(type: "integer", nullable: false),
                     ReopenReason = table.Column<string>(type: "text", nullable: true),
-                    RowVersion = table.Column<byte[]>(type: "bytea", rowVersion: true, nullable: false, defaultValueSql: "substring(decode(md5(random()::text), 'hex') from 1 for 8)"),
                     CreatedAtUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAtUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     ResolvedAtUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)

@@ -31,7 +31,6 @@ public class Complaint
     public int ReopenCount { get; set; } = 0;
     public string? ReopenReason { get; set; }
 
-    public byte[] RowVersion { get; set; } = null!;
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAtUtc { get; set; }
     public DateTime? ResolvedAtUtc { get; set; }

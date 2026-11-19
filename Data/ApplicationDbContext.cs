@@ -4,12 +4,11 @@ using Microsoft.EntityFrameworkCore;
 namespace CompetitionApi.Data;
 
 /// <summary>
-/// Abstract base DbContext defining all CampusConnect domain entities, DbSets, and relationships.
-/// Concrete provider implementation is PostgreSqlApplicationDbContext.
+/// PostgreSQL database context for CampusConnect.
 /// </summary>
-public abstract class ApplicationDbContext : DbContext
+public class ApplicationDbContext : DbContext
 {
-    protected ApplicationDbContext(DbContextOptions options)
+    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : base(options)
     {
     }

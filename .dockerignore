@@ -1,0 +1,12 @@
+**/.git
+**/.gitignore
+**/.vs
+**/.vscode
+**/bin
+**/obj
+**/*.dll
+**/*.pdb
+**/*.user
+**/*.lock
+Dockerfile*
+.dockerignore

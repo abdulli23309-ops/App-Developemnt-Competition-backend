@@ -81,7 +81,6 @@ public class ComplaintConfiguration : IEntityTypeConfiguration<Complaint>
         builder.Property(c => c.Priority).HasConversion<string>().HasMaxLength(30).IsRequired();
         builder.Property(c => c.Status).HasConversion<string>().HasMaxLength(30).IsRequired();
 
-        builder.Property(c => c.RowVersion).IsRowVersion();
 
         builder.HasOne(c => c.Student)
             .WithMany(u => u.Complaints)

@@ -15,86 +15,81 @@ public static class ServiceCollectionExtensions
         IConfiguration configuration,
         IHostEnvironment environment)
     {
-        // 1. Resolve PostgreSQL connection string from Railway environment variables in order of priority
-        var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL")
-            ?? Environment.GetEnvironmentVariable("DATABASE_PRIVATE_URL")
-            ?? Environment.GetEnvironmentVariable("DATABASE_PUBLIC_URL")
-            ?? Environment.GetEnvironmentVariable("POSTGRESQL_URL")
-            ?? Environment.GetEnvironmentVariable("POSTGRES_URL");
-
+        // 1. Resolve PostgreSQL connection string in strict order of priority:
+        //    a. DATABASE_URL env var
+        //    b. ConnectionStrings:DefaultConnection
+        //    c. Throw descriptive error naming missing variable
+        var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
         var defaultConn = configuration.GetConnectionString("DefaultConnection")
             ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
 
-        string rawConn;
+        string npgsqlConnectionString;
 
         if (!string.IsNullOrWhiteSpace(databaseUrl))
         {
-            rawConn = databaseUrl;
+            npgsqlConnectionString = ConvertDatabaseUrlToNpgsqlConnectionString(databaseUrl.Trim());
         }
         else if (!string.IsNullOrWhiteSpace(defaultConn))
         {
-            rawConn = defaultConn;
-        }
-        else
-        {
-            // Check individual Railway PG environment variables
-            var pgHost = Environment.GetEnvironmentVariable("PGHOST") ?? Environment.GetEnvironmentVariable("POSTGRES_HOST");
-            if (!string.IsNullOrWhiteSpace(pgHost))
+            var trimmed = defaultConn.Trim();
+            if (trimmed.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
             {
-                var pgPort = Environment.GetEnvironmentVariable("PGPORT") ?? Environment.GetEnvironmentVariable("POSTGRES_PORT") ?? "5432";
-                var pgDb = Environment.GetEnvironmentVariable("PGDATABASE") ?? Environment.GetEnvironmentVariable("POSTGRES_DB") ?? "railway";
-                var pgUser = Environment.GetEnvironmentVariable("PGUSER") ?? Environment.GetEnvironmentVariable("POSTGRES_USER") ?? "postgres";
-                var pgPass = Environment.GetEnvironmentVariable("PGPASSWORD") ?? Environment.GetEnvironmentVariable("POSTGRES_PASSWORD") ?? "";
-                rawConn = $"Host={pgHost};Port={pgPort};Database={pgDb};Username={pgUser};Password={pgPass};";
+                npgsqlConnectionString = ConvertDatabaseUrlToNpgsqlConnectionString(trimmed);
             }
             else
             {
-                // Fallback for local PostgreSQL development
-                rawConn = "Host=localhost;Port=5432;Database=CompetitionDb;Username=postgres;Password=postgres";
+                if (!trimmed.Contains("Host=", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        "Invalid ConnectionStrings:DefaultConnection. Expected a PostgreSQL connection string starting with 'Host=' or a 'postgres://' URI.");
+                }
+                var csBuilder = new NpgsqlConnectionStringBuilder(trimmed);
+                if (csBuilder.Timeout < 30) csBuilder.Timeout = 30;
+                if (csBuilder.CommandTimeout < 60) csBuilder.CommandTimeout = 60;
+                if (csBuilder.KeepAlive < 30) csBuilder.KeepAlive = 30;
+                npgsqlConnectionString = csBuilder.ConnectionString;
             }
         }
+        else
+        {
+            throw new InvalidOperationException(
+                "Missing required PostgreSQL connection configuration. Set either 'DATABASE_URL' environment variable or 'ConnectionStrings:DefaultConnection' configuration.");
+        }
 
-        var npgsqlConnectionString = NormalizePostgresConnectionString(rawConn);
-
-        // Exclusively register PostgreSqlApplicationDbContext with Npgsql provider
-        services.AddDbContext<PostgreSqlApplicationDbContext>(options =>
+        // Register ONE concrete ApplicationDbContext with Npgsql provider
+        services.AddDbContext<ApplicationDbContext>(options =>
             options.UseNpgsql(
                 npgsqlConnectionString,
                 postgres =>
                 {
-                    postgres.MigrationsAssembly(typeof(PostgreSqlApplicationDbContext).Assembly.FullName);
+                    postgres.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName);
                     postgres.EnableRetryOnFailure(
                         maxRetryCount: 3,
                         maxRetryDelay: TimeSpan.FromSeconds(5),
                         errorCodesToAdd: null);
                 }));
 
-        // Forward resolution of ApplicationDbContext base class to PostgreSqlApplicationDbContext
-        services.AddScoped<ApplicationDbContext>(serviceProvider =>
-            serviceProvider.GetRequiredService<PostgreSqlApplicationDbContext>());
-
-        // Safe diagnostic logging without exposing credentials
+        // Safe diagnostic logging without exposing passwords or credentials
         var safe = GetSafeConnectionInfo(npgsqlConnectionString);
         Console.WriteLine($"Database provider: PostgreSQL (Host={safe.Host}, Port={safe.Port}, Database={safe.Database}, SSL={safe.SslMode}).");
 
         return services;
     }
 
-    private static string NormalizePostgresConnectionString(string value)
+    public static string ConvertDatabaseUrlToNpgsqlConnectionString(string databaseUrl)
     {
-        NpgsqlConnectionStringBuilder builder;
-
-        if (value.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
-            value.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+        if (databaseUrl.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
+            databaseUrl.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
         {
-            var uri = new Uri(value);
+            var uri = new Uri(databaseUrl);
             var userInfo = uri.UserInfo.Split(':', 2);
             var port = uri.Port > 0 ? uri.Port : 5432;
             var database = Uri.UnescapeDataString(uri.AbsolutePath.TrimStart('/'));
             var username = Uri.UnescapeDataString(userInfo[0]);
             var password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : string.Empty;
 
-            builder = new NpgsqlConnectionStringBuilder
+            var builder = new NpgsqlConnectionStringBuilder
             {
                 Host = uri.Host,
                 Port = port,
@@ -118,16 +113,16 @@ public static class ServiceCollectionExtensions
                     }
                 }
             }
-        }
-        else
-        {
-            builder = new NpgsqlConnectionStringBuilder(value);
-            if (builder.Timeout < 30) builder.Timeout = 30;
-            if (builder.CommandTimeout < 60) builder.CommandTimeout = 60;
-            if (builder.KeepAlive < 30) builder.KeepAlive = 30;
+
+            return builder.ConnectionString;
         }
 
-        return builder.ConnectionString;
+        // If already key=value format
+        var kvBuilder = new NpgsqlConnectionStringBuilder(databaseUrl);
+        if (kvBuilder.Timeout < 30) kvBuilder.Timeout = 30;
+        if (kvBuilder.CommandTimeout < 60) kvBuilder.CommandTimeout = 60;
+        if (kvBuilder.KeepAlive < 30) kvBuilder.KeepAlive = 30;
+        return kvBuilder.ConnectionString;
     }
 
     private static (string Host, int Port, string Database, string SslMode) GetSafeConnectionInfo(string connectionString)
@@ -145,40 +140,37 @@ public static class ServiceCollectionExtensions
 
     public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)
     {
-        // Standardized JWT key resolution supporting both Key and SecretKey
         var secretKey = configuration["Jwt:Key"]
             ?? configuration["Jwt:SecretKey"]
             ?? Environment.GetEnvironmentVariable("JWT_SECRET_KEY")
             ?? Environment.GetEnvironmentVariable("JWT__KEY")
             ?? "CampusConnect_DefaultDevelopmentSecretKey_MustChangeInProduction_2026!";
 
-        var issuer = configuration["Jwt:Issuer"] ?? "CampusConnectApi";
-        var audience = configuration["Jwt:Audience"] ?? "CampusConnectClient";
+        var issuer = configuration["Jwt:Issuer"]
+            ?? Environment.GetEnvironmentVariable("JWT__ISSUER")
+            ?? "CampusConnectApi";
 
-        var key = Encoding.UTF8.GetBytes(secretKey);
+        var audience = configuration["Jwt:Audience"]
+            ?? Environment.GetEnvironmentVariable("JWT__AUDIENCE")
+            ?? "CampusConnectClient";
 
-        services.AddAuthentication(options =>
-        {
-            options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-            options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-        })
-        .AddJwtBearer(options =>
-        {
-            options.RequireHttpsMetadata = false;
-            options.SaveToken = true;
-            options.MapInboundClaims = false; // Preserves exact claim names: 'sub', 'role', 'departmentId'
-            options.TokenValidationParameters = new TokenValidationParameters
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
+
+        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
             {
-                ValidateIssuerSigningKey = true,
-                IssuerSigningKey = new SymmetricSecurityKey(key),
-                ValidateIssuer = !string.IsNullOrEmpty(issuer),
-                ValidIssuer = issuer,
-                ValidateAudience = !string.IsNullOrEmpty(audience),
-                ValidAudience = audience,
-                ValidateLifetime = true,
-                ClockSkew = TimeSpan.Zero
-            };
-        });
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = key,
+                    ValidateIssuer = !string.IsNullOrEmpty(issuer),
+                    ValidIssuer = issuer,
+                    ValidateAudience = !string.IsNullOrEmpty(audience),
+                    ValidAudience = audience,
+                    ValidateLifetime = true,
+                    ClockSkew = TimeSpan.Zero
+                };
+            });
 
         services.AddAuthorization(options =>
         {

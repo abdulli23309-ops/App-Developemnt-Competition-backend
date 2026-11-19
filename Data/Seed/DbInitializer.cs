@@ -6,10 +6,11 @@ namespace CompetitionApi.Data.Seed;
 
 public static class DbInitializer
 {
-    public static void Initialize(PostgreSqlApplicationDbContext context)
+    public static void Initialize(ApplicationDbContext context)
     {
         var hasher = new PasswordHasher<User>();
-        var defaultPasswordHash = hasher.HashPassword(new User(), "Password123!");
+        var seedPassword = Environment.GetEnvironmentVariable("SEED_DEFAULT_PASSWORD") ?? "Password123!";
+        var defaultPasswordHash = hasher.HashPassword(new User(), seedPassword);
 
         // 1. Seed 4 Departments
         if (!context.Departments.Any())
@@ -220,6 +221,7 @@ public static class DbInitializer
             var itIssue = context.IssueTypes.First(i => i.Name == "Hardware Malfunction & Workstations");
             var cafeIssue = context.IssueTypes.First(i => i.Name == "Food Quality & Freshness");
             var libIssue = context.IssueTypes.First(i => i.Name == "Digital Resources & Wi-Fi Access");
+            var acadIssue = context.IssueTypes.First(i => i.Name == "Lecture Scheduling & Timetable Clash");
 
             var complaints = new List<Complaint>
             {
@@ -273,6 +275,22 @@ public static class DbInitializer
                     CreatedAtUtc = DateTime.UtcNow.AddDays(-5),
                     UpdatedAtUtc = DateTime.UtcNow.AddDays(-4),
                     ResolvedAtUtc = DateTime.UtcNow.AddDays(-4)
+                },
+                new()
+                {
+                    TrackingCode = "CC-2026-0004",
+                    Title = "Timetable clash between SE301 and CS305 lectures",
+                    Description = "The Friday lecture slots for Software Architecture and Database Systems overlap on timetable.",
+                    Location = "Block A, Room 204",
+                    CategoryId = acadCat.Id,
+                    DepartmentId = acadDept.Id,
+                    IssueTypeId = acadIssue.Id,
+                    Priority = ComplaintPriority.Medium,
+                    Status = ComplaintStatus.Pending,
+                    IsAnonymous = false,
+                    StudentId = student.Id,
+                    CreatedAtUtc = DateTime.UtcNow.AddDays(-1),
+                    UpdatedAtUtc = DateTime.UtcNow.AddDays(-1)
                 }
             };
 
@@ -282,6 +300,7 @@ public static class DbInitializer
             // Seed initial status history and remarks for demo complaints
             var c1 = context.Complaints.First(c => c.TrackingCode == "CC-2026-0001");
             var c3 = context.Complaints.First(c => c.TrackingCode == "CC-2026-0003");
+            var c4 = context.Complaints.First(c => c.TrackingCode == "CC-2026-0004");
             var itAdminUser = context.Users.First(u => u.Email == "itlabs.admin@biit.edu.pk");
             var libAdminUser = context.Users.First(u => u.Email == "library.admin@biit.edu.pk");
 
@@ -294,6 +313,15 @@ public static class DbInitializer
                     NewStatus = ComplaintStatus.Pending,
                     Remarks = "Complaint submitted by student.",
                     ChangedAtUtc = c1.CreatedAtUtc
+                },
+                new StatusHistory
+                {
+                    ComplaintId = c4.Id,
+                    ChangedByUserId = student.Id,
+                    PreviousStatus = ComplaintStatus.Pending,
+                    NewStatus = ComplaintStatus.Pending,
+                    Remarks = "Complaint submitted by student.",
+                    ChangedAtUtc = c4.CreatedAtUtc
                 },
                 new StatusHistory
                 {

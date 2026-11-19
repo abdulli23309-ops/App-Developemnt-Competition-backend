@@ -9,11 +9,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace CompetitionApi.Migrations.PostgreSql
+namespace CompetitionApi.Migrations
 {
-    [DbContext(typeof(PostgreSqlApplicationDbContext))]
-    [Migration("20261119092537_InitialPostgreSqlCreate")]
-    partial class InitialPostgreSqlCreate
+    [DbContext(typeof(ApplicationDbContext))]
+    [Migration("20261119101429_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -105,13 +105,6 @@ namespace CompetitionApi.Migrations.PostgreSql
 
                     b.Property<DateTime?>("ResolvedAtUtc")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .IsRequired()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("bytea")
-                        .HasDefaultValueSql("substring(decode(md5(random()::text), 'hex') from 1 for 8)");
 
                     b.Property<string>("Status")
                         .IsRequired()

@@ -64,12 +64,12 @@ public class ComplaintService : IComplaintService
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            var s = search.Trim().ToLower();
+            var pattern = $"%{search.Trim()}%";
             query = query.Where(c =>
-                c.TrackingCode.ToLower().Contains(s) ||
-                c.Title.ToLower().Contains(s) ||
-                c.Description.ToLower().Contains(s) ||
-                (c.Location != null && c.Location.ToLower().Contains(s)));
+                EF.Functions.ILike(c.TrackingCode, pattern) ||
+                EF.Functions.ILike(c.Title, pattern) ||
+                EF.Functions.ILike(c.Description, pattern) ||
+                (c.Location != null && EF.Functions.ILike(c.Location, pattern)));
         }
 
         if (!string.IsNullOrWhiteSpace(status) && !string.Equals(status, "all", StringComparison.OrdinalIgnoreCase))
@@ -157,7 +157,6 @@ public class ComplaintService : IComplaintService
             IsAnonymous = request.IsAnonymous,
             StudentId = studentId,
             CreatedAtUtc = DateTime.UtcNow,
-            RowVersion = new byte[8],
         };
 
         _db.Complaints.Add(complaint);

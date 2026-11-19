@@ -16,12 +16,4 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
   </ItemGroup>
 
-  <!-- SQL Server migrations and design factory preserved on disk but excluded from active PostgreSQL deployment -->
-  <ItemGroup>
-    <Compile Remove="Data/SqlServerDesignTimeDbContextFactory.cs" />
-    <Compile Remove="Migrations/20261119064246_InitialCreate.cs" />
-    <Compile Remove="Migrations/20261119064246_InitialCreate.Designer.cs" />
-    <Compile Remove="Migrations/ApplicationDbContextModelSnapshot.cs" />
-  </ItemGroup>
-
 </Project>
