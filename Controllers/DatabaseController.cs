@@ -27,30 +27,37 @@ public class DatabaseController : ControllerBase
 
             if (canConnect)
             {
-                _logger.LogInformation("Database connectivity check succeeded at {Timestamp}.", DateTime.UtcNow);
+                _logger.LogInformation("Database connectivity check succeeded at {Timestamp}. Provider={Provider}",
+                    DateTime.UtcNow, _dbContext.Database.ProviderName);
                 return Ok(new
                 {
                     success = true,
                     message = "Database is reachable.",
+                    provider = _dbContext.Database.ProviderName,
                     timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss'Z'")
                 });
             }
 
-            _logger.LogWarning("Database connectivity check failed: database is unreachable at {Timestamp}.", DateTime.UtcNow);
+            _logger.LogWarning("Database connectivity check returned false at {Timestamp}. Provider={Provider}",
+                DateTime.UtcNow, _dbContext.Database.ProviderName);
             return StatusCode(503, new
             {
                 success = false,
                 message = "Database is unavailable.",
+                provider = _dbContext.Database.ProviderName,
                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss'Z'")
             });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Database connectivity check threw an exception at {Timestamp}.", DateTime.UtcNow);
+            _logger.LogError(ex, "Database connectivity check threw an exception at {Timestamp}. Provider={Provider}, Message={Message}",
+                DateTime.UtcNow, _dbContext.Database.ProviderName, ex.Message);
             return StatusCode(503, new
             {
                 success = false,
                 message = "Database is unavailable.",
+                provider = _dbContext.Database.ProviderName,
+                error = ex.Message,
                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss'Z'")
             });
         }

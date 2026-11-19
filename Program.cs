@@ -71,8 +71,34 @@ app.UseMiddleware<GlobalExceptionMiddleware>();
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<PostgreSqlApplicationDbContext>();
-    dbContext.Database.Migrate();
-    CompetitionApi.Data.Seed.DbInitializer.Initialize(dbContext);
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    const int maxRetries = 5;
+    var succeeded = false;
+
+    for (var attempt = 1; attempt <= maxRetries; attempt++)
+    {
+        try
+        {
+            logger.LogInformation("Connecting to PostgreSQL and verifying migrations (attempt {Attempt}/{MaxRetries})...", attempt, maxRetries);
+            dbContext.Database.Migrate();
+            CompetitionApi.Data.Seed.DbInitializer.Initialize(dbContext);
+            succeeded = true;
+            logger.LogInformation("PostgreSQL migration and database seeding completed successfully.");
+            break;
+        }
+        catch (Exception ex) when (attempt < maxRetries)
+        {
+            logger.LogWarning(ex, "Database connection/migration attempt {Attempt} failed: {Message}. Retrying in 2 seconds...", attempt, ex.Message);
+            Thread.Sleep(2000);
+        }
+    }
+
+    if (!succeeded)
+    {
+        logger.LogError("CRITICAL: Failed to connect to or migrate PostgreSQL database after {MaxRetries} attempts.", maxRetries);
+        throw new InvalidOperationException($"CRITICAL: Database initialization failed after {maxRetries} attempts.");
+    }
 }
 
 app.UseCors("FrontendPolicy");
