@@ -79,7 +79,7 @@ sqlcmd -S "DESKTOP-UD649GB\SQLEXPRESS" -E -Q "CREATE DATABASE CompetitionDb"
 
 Local development uses the SQL Server connection string in `appsettings.json`. Production always selects PostgreSQL and reads `DATABASE_URL` (Railway's `postgres://` / `postgresql://` URL) or `ConnectionStrings__DefaultConnection` (Npgsql key/value format).
 
-**Production PostgreSQL migrations are not ready yet.** The checked-in migration set is SQL Server-specific, so startup deliberately fails before migration or seeding when PostgreSQL is selected. Add and review a PostgreSQL-specific migration set before deploying this API against Railway PostgreSQL.
+**PostgreSQL has a separate initial migration set** under `Migrations/PostgreSql`; the original SQL Server migration remains unchanged. Review the generated PostgreSQL migration against the target schema before deploying. Startup applies pending migrations and seeds only after migration succeeds.
 
 ### 4. Run the Backend
 
