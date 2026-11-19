@@ -1,6 +1,9 @@
 @CompetitionApi_HostAddress = http://localhost:5116
 
-GET {{CompetitionApi_HostAddress}}/weatherforecast/
+GET {{CompetitionApi_HostAddress}}/api/health
 Accept: application/json
 
 ###
+
+GET {{CompetitionApi_HostAddress}}/api/database/status
+Accept: application/json

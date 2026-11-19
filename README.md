@@ -1,38 +1,54 @@
-# Competition API (ASP.NET Core .NET 10)
+# CampusConnect API (ASP.NET Core .NET 10)
 
-Production-ready ASP.NET Core Web API foundation for an application development competition.
+Production-ready ASP.NET Core Web API foundation for CampusConnect.
 
 ## Architecture
 
 - **Framework:** ASP.NET Core .NET 10 Web API
-- **Database:** Microsoft SQL Server (Entity Framework Core 10)
-- **ORM:** EF Core SQL Server provider
+- **Primary Database:** Microsoft SQL Server 2025 (`CompetitionDb`) via Entity Framework Core 10
+- **Cloud Fallback:** Optional PostgreSQL support via `DATABASE_URL` (documented for multi-cloud deployments)
+- **Authentication:** JWT Bearer Authentication (`Microsoft.AspNetCore.Authentication.JwtBearer`)
 - **API Documentation:** OpenAPI (built-in .NET 10, Development only)
-- **CORS:** Configurable policy (`FrontendPolicy`)
-- **Deployment:** Railway (containerized via Docker)
-- **Database Hosting:** Railway (self-hosted SQL Server container)
+- **CORS:** Configurable environment-driven policy (`FrontendPolicy`)
+- **Deployment:** Railway / Docker / Self-hosted
 
 ## Project Structure
 
 ```
 CompetitionApi/
 ├── Controllers/
+│   ├── BaseApiController.cs      # Reusable API controller with standardized ApiResponse
 │   ├── HealthController.cs       # GET /api/health
-│   ├── DatabaseController.cs     # GET /api/database/status
-│   └── WeatherForecastController.cs (sample, preserve)
+│   └── DatabaseController.cs     # GET /api/database/status
 ├── Data/
-│   └── ApplicationDbContext.cs   # EF Core DbContext (empty, ready for entities)
-├── DTOs/                         # Empty, ready for data transfer objects
-├── Interfaces/                   # Empty, ready for service interfaces
-├── Models/                       # Empty, ready for domain models
-├── Services/                     # Empty, ready for business services
+│   ├── Configurations/           # EF Core entity configuration folder
+│   ├── Seed/                     # Database seed folder
+│   └── ApplicationDbContext.cs   # EF Core DbContext
+├── DTOs/
+│   ├── Common/                   # ApiResponse, PagedResult
+│   ├── Auth/                     # Auth request/response DTOs
+│   ├── Complaints/               # Complaint DTOs
+│   ├── Admin/                    # Admin management DTOs
+│   └── Analytics/                # Analytics DTOs
+├── Models/
+│   ├── Entities/                 # Domain entities (User, Department, Complaint, etc.)
+│   └── Enums/                    # CampusConnect enums (UserRole, ComplaintStatus, ComplaintPriority)
+├── Services/
+│   └── Interfaces/               # Domain service contracts
+├── Middleware/
+│   └── GlobalExceptionMiddleware.cs # Centralized error handling
+├── Authorization/
+│   └── Roles.cs                  # Student, DeptAdmin, SuperAdmin roles and policies
+├── Extensions/
+│   └── ServiceCollectionExtensions.cs # SQL Server, JWT & CORS setup
+├── Validators/                   # Request validators
 ├── Properties/
 │   └── launchSettings.json       # Local development profiles
 ├── Dockerfile                    # Multi-stage Dockerfile for Railway
-├── appsettings.json              # Configuration (connection strings, logging)
-├── appsettings.Development.json  # Development-specific overrides
+├── appsettings.json              # Configuration (SQL Server, JWT)
+├── appsettings.example.json      # Sanitized template
 ├── CompetitionApi.csproj         # Project file with NuGet references
-└── Program.cs                    # Application entry point & middleware
+└── Program.cs                    # Clean application entry point & pipeline
 ```
 
 ## Prerequisites
@@ -102,6 +118,9 @@ dotnet build -c Debug
 | `PORT` | Port to listen on (Railway) | `8080` |
 | `FRONTEND_ORIGIN` | CORS origin for deployed frontend | `https://your-app.vercel.app` |
 | `ConnectionStrings__DefaultConnection` | SQL Server connection string | `Server=...;Database=CompetitionDb;...` |
+| `Jwt__Key` | Secret key for signing JWT tokens | `YOUR_SECURE_RANDOM_SECRET_KEY...` |
+| `Jwt__Issuer` | JWT issuer name | `CampusConnectApi` |
+| `Jwt__Audience` | JWT audience name | `CampusConnectClient` |
 
 ## CORS Configuration
 
