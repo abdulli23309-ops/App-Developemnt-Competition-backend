@@ -67,28 +67,17 @@ var app = builder.Build();
 
 app.UseMiddleware<GlobalExceptionMiddleware>();
 
-// Apply migrations and seed on startup. Fail startup if either step fails.
+// Apply migrations and seed on startup exclusively using PostgreSqlApplicationDbContext.
 using (var scope = app.Services.CreateScope())
 {
-    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-    // Keep PostgreSQL migrations isolated from the SQL Server migration set. The
-    // PostgreSQL DI registration resolves this base type to the PostgreSQL context.
-    if (dbContext.Database.ProviderName == "Npgsql.EntityFrameworkCore.PostgreSQL" &&
-        dbContext is not PostgreSqlApplicationDbContext)
-    {
-        throw new InvalidOperationException(
-            "PostgreSQL is selected, but the PostgreSQL-specific DbContext was not registered. " +
-            "Refusing to use SQL Server migrations with PostgreSQL.");
-    }
-
+    var dbContext = scope.ServiceProvider.GetRequiredService<PostgreSqlApplicationDbContext>();
     dbContext.Database.Migrate();
     CompetitionApi.Data.Seed.DbInitializer.Initialize(dbContext);
 }
 
 app.UseCors("FrontendPolicy");
 
-if (app.Environment.IsDevelopment())
+if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }

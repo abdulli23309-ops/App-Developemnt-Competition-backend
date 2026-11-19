@@ -26,13 +26,13 @@ public class GlobalExceptionMiddleware
         {
             await _next(context);
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Unhandled exception occurred while processing HTTP request {Method} {Path}",
-                context.Request.Method, context.Request.Path);
+        catch (Exception ex) when (ex is not OperationCanceledException and not TaskCanceledException)
+    {
+        _logger.LogError(ex, "Unhandled exception occurred while processing HTTP request {Method} {Path}",
+            context.Request.Method, context.Request.Path);
 
-            await HandleExceptionAsync(context, ex);
-        }
+        await HandleExceptionAsync(context, ex);
+    }
     }
 
     private Task HandleExceptionAsync(HttpContext context, Exception exception)

@@ -19,59 +19,28 @@ public static class ServiceCollectionExtensions
         var defaultConn = configuration.GetConnectionString("DefaultConnection")
             ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
 
-        var hasPostgresUrl = !string.IsNullOrWhiteSpace(databaseUrl);
-        var hasPostgresDefault = IsPostgresConnection(defaultConn);
-        var isPostgres = hasPostgresUrl || hasPostgresDefault;
-
-        if (environment.IsProduction())
-        {
-            if (!isPostgres)
-            {
-                throw new InvalidOperationException(
-                    "CRITICAL: Production requires a valid PostgreSQL configuration via DATABASE_URL or ConnectionStrings__DefaultConnection. " +
-                    "Silent fallback to SQL Server is strictly forbidden in production.");
-            }
-
-            var rawConn = hasPostgresUrl ? databaseUrl! : defaultConn!;
-            var npgsqlConnectionString = NormalizePostgresConnectionString(rawConn);
-            services.AddDbContext<PostgreSqlApplicationDbContext>(options =>
-                options.UseNpgsql(
-                    npgsqlConnectionString,
-                    postgres => postgres.MigrationsAssembly(typeof(PostgreSqlApplicationDbContext).Assembly.FullName)));
-            services.AddScoped<ApplicationDbContext>(serviceProvider =>
-                serviceProvider.GetRequiredService<PostgreSqlApplicationDbContext>());
-            Console.WriteLine("Database provider selected: PostgreSQL (Railway Production).");
-        }
-        else if (isPostgres)
-        {
-            var rawConn = hasPostgresUrl ? databaseUrl! : defaultConn!;
-            var npgsqlConnectionString = NormalizePostgresConnectionString(rawConn);
-            services.AddDbContext<PostgreSqlApplicationDbContext>(options =>
-                options.UseNpgsql(
-                    npgsqlConnectionString,
-                    postgres => postgres.MigrationsAssembly(typeof(PostgreSqlApplicationDbContext).Assembly.FullName)));
-            services.AddScoped<ApplicationDbContext>(serviceProvider =>
-                serviceProvider.GetRequiredService<PostgreSqlApplicationDbContext>());
-            Console.WriteLine("Database provider selected: PostgreSQL (Development).");
-        }
-        else
-        {
-            var sqlServerConn = !string.IsNullOrWhiteSpace(defaultConn)
+        var rawConn = !string.IsNullOrWhiteSpace(databaseUrl)
+            ? databaseUrl
+            : !string.IsNullOrWhiteSpace(defaultConn)
                 ? defaultConn
-                : "Server=DESKTOP-UD649GB\\SQLEXPRESS;Database=CompetitionDb;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=True";
+                : "Host=localhost;Port=5432;Database=CompetitionDb;Username=postgres;Password=postgres";
 
-            services.AddDbContext<ApplicationDbContext>(options => options.UseSqlServer(sqlServerConn));
-            Console.WriteLine("Database provider selected: SQL Server (Local Development).");
-        }
+        var npgsqlConnectionString = NormalizePostgresConnectionString(rawConn);
+
+        // Exclusively register PostgreSqlApplicationDbContext with Npgsql provider
+        services.AddDbContext<PostgreSqlApplicationDbContext>(options =>
+            options.UseNpgsql(
+                npgsqlConnectionString,
+                postgres => postgres.MigrationsAssembly(typeof(PostgreSqlApplicationDbContext).Assembly.FullName)));
+
+        // Forward resolution of ApplicationDbContext base class to PostgreSqlApplicationDbContext
+        services.AddScoped<ApplicationDbContext>(serviceProvider =>
+            serviceProvider.GetRequiredService<PostgreSqlApplicationDbContext>());
+
+        Console.WriteLine("Database provider selected: PostgreSQL (Npgsql exclusively configured).");
 
         return services;
     }
-
-    private static bool IsPostgresConnection(string? value) =>
-        !string.IsNullOrWhiteSpace(value) &&
-        (value.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
-         value.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase) ||
-         value.Contains("Host=", StringComparison.OrdinalIgnoreCase));
 
     private static string NormalizePostgresConnectionString(string value)
     {
@@ -142,9 +111,7 @@ public static class ServiceCollectionExtensions
                 ValidateAudience = !string.IsNullOrEmpty(audience),
                 ValidAudience = audience,
                 ValidateLifetime = true,
-                ClockSkew = TimeSpan.Zero,
-                NameClaimType = "sub",
-                RoleClaimType = "role"
+                ClockSkew = TimeSpan.Zero
             };
         });
 
@@ -153,45 +120,6 @@ public static class ServiceCollectionExtensions
             options.AddPolicy(Policies.RequireStudent, policy => policy.RequireRole(Roles.Student));
             options.AddPolicy(Policies.RequireDeptAdmin, policy => policy.RequireRole(Roles.DeptAdmin));
             options.AddPolicy(Policies.RequireSuperAdmin, policy => policy.RequireRole(Roles.SuperAdmin));
-        });
-
-        return services;
-    }
-
-    public static IServiceCollection AddCorsConfiguration(this IServiceCollection services)
-    {
-        services.AddCors(options =>
-        {
-            options.AddPolicy("FrontendPolicy", policy =>
-            {
-                policy
-                    .SetIsOriginAllowed(origin =>
-                    {
-                        if (Uri.TryCreate(origin, UriKind.Absolute, out var uri))
-                        {
-                            return uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
-                                   uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase);
-                        }
-                        return false;
-                    })
-                    .AllowAnyHeader()
-                    .AllowAnyMethod();
-
-                var frontendOrigin = Environment.GetEnvironmentVariable("FRONTEND_ORIGIN");
-                if (!string.IsNullOrWhiteSpace(frontendOrigin))
-                {
-                    var origins = frontendOrigin
-                        .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
-                        .Select(o => o.Trim().TrimEnd('/'))
-                        .Where(o => !string.IsNullOrEmpty(o))
-                        .ToArray();
-
-                    if (origins.Length > 0)
-                    {
-                        policy.WithOrigins(origins);
-                    }
-                }
-            });
         });
 
         return services;

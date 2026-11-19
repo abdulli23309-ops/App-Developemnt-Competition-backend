@@ -6,7 +6,7 @@ namespace CompetitionApi.Data.Seed;
 
 public static class DbInitializer
 {
-    public static void Initialize(ApplicationDbContext context)
+    public static void Initialize(PostgreSqlApplicationDbContext context)
     {
         var hasher = new PasswordHasher<User>();
         var defaultPasswordHash = hasher.HashPassword(new User(), "Password123!");
