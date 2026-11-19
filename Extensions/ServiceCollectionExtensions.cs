@@ -4,23 +4,99 @@ using CompetitionApi.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Npgsql;
 
 namespace CompetitionApi.Extensions;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddDatabaseConfiguration(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddDatabaseConfiguration(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IHostEnvironment environment)
     {
-        // SQL Server is the primary database provider
-        var connectionString = configuration.GetConnectionString("DefaultConnection")
+        var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
+        var defaultConn = configuration.GetConnectionString("DefaultConnection")
             ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
 
-        services.AddDbContext<ApplicationDbContext>(options =>
+        var hasPostgresUrl = !string.IsNullOrWhiteSpace(databaseUrl);
+        var hasPostgresDefault = IsPostgresConnection(defaultConn);
+        var isPostgres = hasPostgresUrl || hasPostgresDefault;
+
+        if (environment.IsProduction())
         {
-            options.UseSqlServer(connectionString);
-        });
+            if (!isPostgres)
+            {
+                throw new InvalidOperationException(
+                    "CRITICAL: Production requires a valid PostgreSQL configuration via DATABASE_URL or ConnectionStrings__DefaultConnection. " +
+                    "Silent fallback to SQL Server is strictly forbidden in production.");
+            }
+
+            var rawConn = hasPostgresUrl ? databaseUrl! : defaultConn!;
+            var npgsqlConnectionString = NormalizePostgresConnectionString(rawConn);
+            services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(npgsqlConnectionString));
+            Console.WriteLine("Database provider selected: PostgreSQL (Railway Production).");
+        }
+        else if (isPostgres)
+        {
+            var rawConn = hasPostgresUrl ? databaseUrl! : defaultConn!;
+            var npgsqlConnectionString = NormalizePostgresConnectionString(rawConn);
+            services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(npgsqlConnectionString));
+            Console.WriteLine("Database provider selected: PostgreSQL (Development).");
+        }
+        else
+        {
+            var sqlServerConn = !string.IsNullOrWhiteSpace(defaultConn)
+                ? defaultConn
+                : "Server=DESKTOP-UD649GB\\SQLEXPRESS;Database=CompetitionDb;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=True";
+
+            services.AddDbContext<ApplicationDbContext>(options => options.UseSqlServer(sqlServerConn));
+            Console.WriteLine("Database provider selected: SQL Server (Local Development).");
+        }
 
         return services;
+    }
+
+    private static bool IsPostgresConnection(string? value) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        (value.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
+         value.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase) ||
+         value.Contains("Host=", StringComparison.OrdinalIgnoreCase));
+
+    private static string NormalizePostgresConnectionString(string value)
+    {
+        if (!value.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
+            !value.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+        {
+            var csBuilder = new NpgsqlConnectionStringBuilder(value);
+            return csBuilder.ConnectionString;
+        }
+
+        var uri = new Uri(value);
+        var userInfo = uri.UserInfo.Split(':', 2);
+        var uriBuilder = new NpgsqlConnectionStringBuilder
+        {
+            Host = uri.Host,
+            Port = uri.IsDefaultPort ? 5432 : uri.Port,
+            Database = Uri.UnescapeDataString(uri.AbsolutePath.TrimStart('/')),
+            Username = Uri.UnescapeDataString(userInfo[0]),
+            Password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : string.Empty,
+            SslMode = SslMode.Prefer
+        };
+
+        foreach (var parameter in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var pair = parameter.Split('=', 2);
+            if (pair.Length == 2 && pair[0].Equals("sslmode", StringComparison.OrdinalIgnoreCase))
+            {
+                if (Enum.TryParse<SslMode>(Uri.UnescapeDataString(pair[1]), true, out var parsedMode))
+                {
+                    uriBuilder.SslMode = parsedMode;
+                }
+            }
+        }
+
+        return uriBuilder.ConnectionString;
     }
 
     public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)

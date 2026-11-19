@@ -10,6 +10,11 @@ public class ApplicationDbContext : DbContext
     {
     }
 
+    protected ApplicationDbContext(DbContextOptions options)
+        : base(options)
+    {
+    }
+
     public DbSet<User> Users => Set<User>();
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<Category> Categories => Set<Category>();

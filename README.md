@@ -6,7 +6,7 @@ Production-ready ASP.NET Core Web API foundation for CampusConnect.
 
 - **Framework:** ASP.NET Core .NET 10 Web API
 - **Primary Database:** Microsoft SQL Server 2025 (`CompetitionDb`) via Entity Framework Core 10
-- **Cloud Fallback:** Optional PostgreSQL support via `DATABASE_URL` (documented for multi-cloud deployments)
+- **Database providers:** Local development uses SQL Server; Production selects PostgreSQL via Npgsql
 - **Authentication:** JWT Bearer Authentication (`Microsoft.AspNetCore.Authentication.JwtBearer`)
 - **API Documentation:** OpenAPI (built-in .NET 10, Development only)
 - **CORS:** Configurable environment-driven policy (`FrontendPolicy`)
@@ -75,9 +75,11 @@ sqlcmd -S "DESKTOP-UD649GB\SQLEXPRESS" -E -Q "CREATE DATABASE CompetitionDb"
 
 > Do not drop or delete an existing database.
 
-### 3. Configure Environment Variables (Local)
+### 3. Configure Environment Variables
 
-The connection string is in `appsettings.json`. For local development with Windows Auth, no changes are needed. For production, use the `ConnectionStrings__DefaultConnection` environment variable.
+Local development uses the SQL Server connection string in `appsettings.json`. Production always selects PostgreSQL and reads `DATABASE_URL` (Railway's `postgres://` / `postgresql://` URL) or `ConnectionStrings__DefaultConnection` (Npgsql key/value format).
+
+**Production PostgreSQL migrations are not ready yet.** The checked-in migration set is SQL Server-specific, so startup deliberately fails before migration or seeding when PostgreSQL is selected. Add and review a PostgreSQL-specific migration set before deploying this API against Railway PostgreSQL.
 
 ### 4. Run the Backend
 
@@ -103,12 +105,12 @@ dotnet build -c Debug
 | GET | `/api/health` | API health check | None |
 | GET | `/api/database/status` | Database connectivity check | None |
 
-## How Backend Connects to SQL Server
+## Database Provider Selection
 
-- `Data/ApplicationDbContext.cs` is an empty `DbContext` ready for domain entities.
-- `Program.cs` registers `ApplicationDbContext` with SQL Server using `UseSqlServer`.
-- The connection string is read from `Configuration.GetConnectionString("DefaultConnection")`.
-- In production, set the `ConnectionStrings__DefaultConnection` environment variable to override `appsettings.json`.
+- `Development` and other non-production environments use `UseSqlServer` unless a PostgreSQL URL or Npgsql `Host=` connection string is supplied.
+- `Production` always uses `UseNpgsql`; set Railway's `DATABASE_URL` or `ConnectionStrings__DefaultConnection`.
+- Provider selection is logged without printing the connection string or credentials.
+- Startup migration or seed failures stop the process; they are not logged and ignored.
 
 ## Environment Variables
 
@@ -117,7 +119,8 @@ dotnet build -c Debug
 | `ASPNETCORE_ENVIRONMENT` | Environment name | `Development`, `Production` |
 | `PORT` | Port to listen on (Railway) | `8080` |
 | `FRONTEND_ORIGIN` | CORS origin for deployed frontend | `https://your-app.vercel.app` |
-| `ConnectionStrings__DefaultConnection` | SQL Server connection string | `Server=...;Database=CompetitionDb;...` |
+| `ConnectionStrings__DefaultConnection` | Local SQL Server or production Npgsql connection string | `Server=...` locally; `Host=...` in Production |
+| `DATABASE_URL` | PostgreSQL URL in Production | Provided by Railway PostgreSQL |
 | `Jwt__Key` | Secret key for signing JWT tokens | `YOUR_SECURE_RANDOM_SECRET_KEY...` |
 | `Jwt__Issuer` | JWT issuer name | `CampusConnectApi` |
 | `Jwt__Audience` | JWT audience name | `CampusConnectClient` |

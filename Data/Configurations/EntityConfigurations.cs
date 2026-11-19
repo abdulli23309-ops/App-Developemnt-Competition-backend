@@ -112,7 +112,7 @@ public class ComplaintAttachmentConfiguration : IEntityTypeConfiguration<Complai
         builder.HasKey(a => a.Id);
         builder.Property(a => a.FileName).HasMaxLength(255).IsRequired();
         builder.Property(a => a.ContentType).HasMaxLength(100).IsRequired();
-        builder.Property(a => a.FileData).HasColumnType("varbinary(max)").IsRequired();
+        builder.Property(a => a.FileData).IsRequired();
 
         builder.HasOne(a => a.Complaint)
             .WithMany(c => c.Attachments)
